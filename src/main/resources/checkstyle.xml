@@ -127,6 +127,8 @@
         <property name="file" value="${samedir}/checkstyle-suppressions.xml"/>
     </module>
 
+    <module name="SuppressWarningsFilter"/>
+
     <!-- Turn checkstyle ON and OFF for a specified code block -->
     <module name="SuppressionCommentFilter">
         <property name="offCommentFormat" value="CHECKSTYLE\.OFF\: ([\w\|]+)"/>
@@ -141,6 +143,7 @@
     <module name="TreeWalker">
 
         <module name="FileContentsHolder"/>
+        <module name="SuppressWarningsHolder"/>
 
         <!-- Checks for imports.                     -->
         <!-- Checks for redundant import statements. -->
