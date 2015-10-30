@@ -24,6 +24,9 @@
     <suppress checks="." files=".*\.ts"/>
     <suppress checks="." files=".*\.html"/>
 
+    <!-- Exclude generated Java files -->
+    <suppress checks="." files=".*[\\/]?generated-sources[\\/].*"/>
+
     <!-- Exclude certain checks from test code -->
     <suppress checks="JavadocVariable" files=".*Test\.java"/>
     <suppress checks="JavadocVariable" files=".*IT\.java"/>
