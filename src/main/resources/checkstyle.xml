@@ -45,7 +45,7 @@
 
     <!-- Checks that file has the license header. -->
     <module name="Header">
-        <property name="headerFile" value="${samedir}/al2"/>
+        <property name="headerFile" value="${header_file}"/>
         <property name="ignoreLines" value="2"/>
         <property name="fileExtensions" value="java, xml"/>
     </module>
@@ -124,7 +124,7 @@
     <module name="Translation"/>
 
     <module name="SuppressionFilter">
-        <property name="file" value="${samedir}/checkstyle-suppressions.xml"/>
+        <property name="file" value="${suppressions_file}"/>
     </module>
 
     <module name="SuppressWarningsFilter"/>
