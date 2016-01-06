@@ -83,11 +83,15 @@
 
     <!-- Forbid shaded packages -->
     <module name="RegexpSingleline">
-        <property name="format" value="^import com\.arpnetworking\.metrics\.com\.fasterxml\.jackson\..*"/>
+        <property name="format" value="^import com\.arpnetworking\.metrics\.com\..*"/>
         <property name="message" value="Do not import shaded dependencies from ArpNetworking."/>
     </module>
     <module name="RegexpSingleline">
-        <property name="format" value="^import com\.arpnetworking\.metrics\.ch\.qos\.logback\..*"/>
+        <property name="format" value="^import com\.arpnetworking\.metrics\.ch\..*"/>
+        <property name="message" value="Do not import shaded dependencies from ArpNetworking."/>
+    </module>
+    <module name="RegexpSingleline">
+        <property name="format" value="^import com\.arpnetworking\.metrics\.org\..*"/>
         <property name="message" value="Do not import shaded dependencies from ArpNetworking."/>
     </module>
     <module name="RegexpSingleline">
