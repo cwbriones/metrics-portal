@@ -144,6 +144,9 @@
     <module name="FileLength">
         <property name="max" value="1000"/>
     </module>
+    
+    <!-- Requires a package-info.java file -->
+    <module name="JavadocPackage"/>
 
     <module name="TreeWalker">
 
@@ -192,9 +195,6 @@
         <module name="JavadocStyle">
             <property name="tokens" value="ANNOTATION_DEF, ANNOTATION_FIELD_DEF, CLASS_DEF, CTOR_DEF, ENUM_CONSTANT_DEF, ENUM_DEF, INTERFACE_DEF, METHOD_DEF, VARIABLE_DEF"/>
         </module>
-	<!-- Requires a package-info.java file -->
-	<module name="JavadocPackage"/>
-
 
         <!-- Checks for Naming Conventions.                  -->
         <!-- See http://checkstyle.sf.net/config_naming.html -->
