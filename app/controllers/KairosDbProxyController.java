@@ -21,7 +21,7 @@ import com.arpnetworking.kairos.client.models.MetricsQuery;
 import com.arpnetworking.kairos.client.models.TagsQuery;
 import com.arpnetworking.kairos.config.MetricsQueryConfig;
 import com.arpnetworking.kairos.service.KairosDbService;
-import com.arpnetworking.kairos.service.KairosDbServiceImpl;
+import com.arpnetworking.kairos.service.BasicKairosDbService;
 import com.arpnetworking.metrics.MetricsFactory;
 import com.arpnetworking.play.ProxyClient;
 import com.arpnetworking.steno.Logger;
@@ -88,7 +88,7 @@ public class KairosDbProxyController extends Controller {
 
         final ImmutableSet<String> excludedTagNames = ImmutableSet.copyOf(
                 configuration.getStringList("kairosdb.proxy.excludedTagNames"));
-        _kairosService = new KairosDbServiceImpl.Builder()
+        _kairosService = new BasicKairosDbService.Builder()
                 .setKairosDbClient(kairosDbClient)
                 .setMetricsFactory(metricsFactory)
                 .setExcludedTagNames(excludedTagNames)

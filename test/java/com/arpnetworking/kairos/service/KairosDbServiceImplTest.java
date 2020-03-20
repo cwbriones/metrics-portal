@@ -72,13 +72,13 @@ public class KairosDbServiceImplTest {
     @Mock
     private MetricsQueryConfig _mockQueryConfig;
 
-    private KairosDbServiceImpl _service;
+    private BasicKairosDbService _service;
 
 
     @Before
     public void setUp() {
         MockitoAnnotations.initMocks(this);
-        _service = new KairosDbServiceImpl.Builder()
+        _service = new BasicKairosDbService.Builder()
                 .setKairosDbClient(_mockClient)
                 .setMetricsFactory(_mockMetricsFactory)
                 .setExcludedTagNames(ImmutableSet.of("host"))
