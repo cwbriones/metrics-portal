@@ -58,13 +58,19 @@ public final class UnboundedPeriodicSchedule implements Schedule {
     @Override
     public Optional<Instant> nextRun(final Optional<Instant> lastRun) {
         final Instant now = _clock.instant();
+
         final Instant start = lastRun
                 .filter(run -> run.compareTo(now) >= 0)
-                .map(run -> run.plus(_fullPeriod)) // Avoid repeating the same period.
+                .map(run -> run.plus(_fullPeriod))
                 .orElse(now);
 
         final long excessMillis = start.toEpochMilli() % _fullPeriod.toMillis();
-        return Optional.of(start.minusMillis(excessMillis));
+        final Instant nextRun = start.minusMillis(excessMillis);
+        if (lastRun.map(run -> !nextRun.isAfter(run)).orElse(false)) {
+            // Avoid repeating the same period
+            return Optional.of(nextRun.plus(_fullPeriod));
+        }
+        return Optional.of(nextRun);
     }
 
     @Override

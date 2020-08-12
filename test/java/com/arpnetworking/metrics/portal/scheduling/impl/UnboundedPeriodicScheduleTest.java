@@ -29,6 +29,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.Optional;
 
 import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.is;
 import static org.junit.Assert.assertThat;
 
@@ -116,5 +117,24 @@ public final class UnboundedPeriodicScheduleTest {
         nextScheduled = schedule.nextRun(Optional.of(CLOCK_START.plus(fivePeriods)));
         assertThat(nextScheduled.isPresent(), is(true));
         assertThat(nextScheduled.get(), equalTo(CLOCK_START.plus(fivePeriods).plus(fullPeriod)));
+    }
+
+    @Test
+    public void testWhenPeriodIsLessThanAMinute() {
+        final Instant now = Instant.parse("2020-08-12T00:31:37Z");
+
+        final Clock clock = Clock.fixed(now, ZoneOffset.UTC);
+        final Schedule schedule =
+                new UnboundedPeriodicSchedule.Builder()
+                        .setClock(clock)
+                        .setPeriodCount(30)
+                        .setPeriod(ChronoUnit.SECONDS)
+                        .build();
+        final Duration fullPeriod = Duration.ofSeconds(30);
+
+        final Instant lastRun = Instant.parse("2020-08-12T00:31:30Z");
+        Optional<Instant> nextScheduled = schedule.nextRun(Optional.of(lastRun));
+        assertThat(nextScheduled.isPresent(), is(true));
+        assertThat(nextScheduled.get(), greaterThan(lastRun));
     }
 }
