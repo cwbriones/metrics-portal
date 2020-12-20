@@ -16,6 +16,9 @@
 
 package com.arpnetworking.metrics.portal.integration.repositories;
 
+import akka.actor.ActorSystem;
+import akka.testkit.javadsl.TestKit;
+import com.arpnetworking.commons.java.util.concurrent.CompletableFutures;
 import com.arpnetworking.metrics.portal.TestBeanFactory;
 import com.arpnetworking.metrics.portal.scheduling.JobExecutionRepository;
 import com.google.common.base.Throwables;
@@ -26,6 +29,7 @@ import models.internal.scheduling.JobExecution;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import scala.concurrent.ExecutionContextExecutor;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -38,6 +42,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasKey;
@@ -60,6 +69,7 @@ public abstract class JobExecutionRepositoryIT<T> {
     private JobExecutionRepository<T> _repository;
     private UUID _jobId;
     private Organization _organization;
+    private ActorSystem _actorSystem;
 
     /**
      * Construct an arbitrary result to be used in a test case.
@@ -86,8 +96,13 @@ public abstract class JobExecutionRepositoryIT<T> {
      */
     abstract void ensureJobExists(Organization organization, UUID jobId);
 
+    ActorSystem getActorSystem() {
+        return _actorSystem;
+    }
+
     @Before
     public void setUpRepository() {
+        _actorSystem = ActorSystem.create();
         _jobId = UUID.randomUUID();
         _organization = TestBeanFactory.createOrganization();
         _repository = setUpRepository(_organization);
@@ -98,6 +113,7 @@ public abstract class JobExecutionRepositoryIT<T> {
     @After
     public void tearDown() {
         _repository.close();
+        TestKit.shutdownActorSystem(_actorSystem);
     }
 
     @Test
@@ -141,6 +157,38 @@ public abstract class JobExecutionRepositoryIT<T> {
                 return 0;
             }
         }).apply(execution);
+    }
+
+    @Test
+    public void testConcurrentAccess() throws Exception {
+        final ExecutionContextExecutor executor = _actorSystem.getDispatcher();
+        final Instant scheduled = Instant.now();
+
+        final List<CompletableFuture<Void>> completableFutures = new ArrayList<>();
+
+        for (int i = 0; i < 200; i++) {
+            final UUID jobId = UUID.randomUUID();
+            int finalI = i;
+            final CompletableFuture<Void> jobFut = new CompletableFuture<>();
+            completableFutures.add(jobFut);
+
+            executor.execute(() -> {
+                ensureJobExists(_organization, jobId);
+                final T result = newResult();
+                _repository.jobStarted(jobId, _organization, scheduled);
+                _repository.jobSucceeded(jobId, _organization, scheduled, result);
+                _repository.getLastCompleted(jobId, _organization);
+                jobFut.complete(null);
+                if (finalI % 10 == 0) {
+                    try {
+                        Thread.sleep(800);
+                    } catch (InterruptedException e) {
+                        throw new RuntimeException(e);
+                    }
+                }
+            });
+        }
+        CompletableFutures.allOf(completableFutures).get(10, TimeUnit.SECONDS);
     }
 
     @Test

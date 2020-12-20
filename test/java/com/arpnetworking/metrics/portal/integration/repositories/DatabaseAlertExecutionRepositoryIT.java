@@ -16,8 +16,6 @@
 
 package com.arpnetworking.metrics.portal.integration.repositories;
 
-import akka.actor.ActorSystem;
-import akka.testkit.javadsl.TestKit;
 import com.arpnetworking.metrics.incubator.PeriodicMetrics;
 import com.arpnetworking.metrics.portal.TestBeanFactory;
 import com.arpnetworking.metrics.portal.alerts.impl.DatabaseAlertExecutionRepository;
@@ -41,8 +39,6 @@ import java.util.UUID;
  * @author Christian Briones (cbriones at dropbox dot com)
  */
 public class DatabaseAlertExecutionRepositoryIT extends JobExecutionRepositoryIT<AlertEvaluationResult> {
-    private ActorSystem _actorSystem;
-
     @Override
     public JobExecutionRepository<AlertEvaluationResult> setUpRepository(final Organization organization) {
         final EbeanServer server = EbeanServerHelper.getMetricsDatabase();
@@ -52,13 +48,12 @@ public class DatabaseAlertExecutionRepositoryIT extends JobExecutionRepositoryIT
         ebeanOrganization.setUuid(organization.getId());
         server.save(ebeanOrganization);
 
-        _actorSystem = ActorSystem.create();
         final PeriodicMetrics metricsMock = Mockito.mock(PeriodicMetrics.class);
 
         return new DatabaseAlertExecutionRepository(
                 server,
                 adminServer,
-                _actorSystem,
+                getActorSystem(),
                 metricsMock,
                 Duration.ZERO,
                 5 // Arbitrary, but helps distinguish logs
@@ -69,12 +64,6 @@ public class DatabaseAlertExecutionRepositoryIT extends JobExecutionRepositoryIT
     public void ensureJobExists(final Organization organization, final UUID jobId) {
         // DatabaseAlertExecutionRepository does not validate that the JobID is a valid AlertID since those
         // references are not constrained in the underlying execution table.
-    }
-
-    @Override
-    public void tearDown() {
-        super.tearDown();
-        TestKit.shutdownActorSystem(_actorSystem);
     }
 
     @Override
