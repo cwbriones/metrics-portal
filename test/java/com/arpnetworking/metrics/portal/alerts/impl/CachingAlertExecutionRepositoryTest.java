@@ -14,6 +14,7 @@ import com.arpnetworking.metrics.incubator.PeriodicMetrics;
 import com.arpnetworking.metrics.portal.alerts.AlertExecutionRepository;
 import com.arpnetworking.metrics.portal.scheduling.impl.MapJobExecutionRepository;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
 import com.typesafe.config.ConfigFactory;
 import models.internal.Organization;
 import models.internal.alerts.AlertEvaluationResult;
@@ -42,26 +43,23 @@ public class CachingAlertExecutionRepositoryTest {
     @Before
     public void setUp() {
         PeriodicMetrics _metrics = Mockito.mock(PeriodicMetrics.class);
-        _actorSystem = ActorSystem.create("TestCacheSystem", ConfigFactory.parseString(
-            "akka {\n" +
-                "  loglevel = \"DEBUG\"\n" +
-                "  actor {\n" +
-                "    provider = \"cluster\"\n" +
-                "  }\n" +
-                "  remote {\n" +
-                "    netty.tcp {\n" +
-                "      hostname = \"127.0.0.1\"\n" +
-                "      port = 0\n" +
-                "    }\n" +
-                "  }\n" +
-                "\n" +
-                "  cluster {\n" +
-                "    seed-nodes = [\n" +
-                "      \"akka.tcp://TestCacheSystem@127.0.0.1:2020\",\n" +
-                "   ]\n" +
-                "    auto-down-unreachable-after = 10s\n" +
-                "  }\n" +
-                "}"
+        _actorSystem = ActorSystem.create("TestCacheSystem", ConfigFactory.parseMap(
+            ImmutableMap.of(
+                "akka", ImmutableMap.of(
+                    "actor", ImmutableMap.of("provider", "cluster"),
+                    "remote", ImmutableMap.of("netty.tcp", ImmutableMap.of(
+                        "hostname", "127.0.0.1",
+                        "port", 2020
+                      )
+                    ),
+                    "cluster", ImmutableMap.of(
+                        "seed-nodes", ImmutableList.of(
+                            "akka.tcp://TestCacheSystem@127.0.0.1:2020"
+                        ),
+                        "auto-down-unreachable-after", "10s"
+                    )
+                )
+            )
         ));
         final Cluster cluster = Cluster.get(_actorSystem);
         cluster.joinSeedNodes(ImmutableList.of(cluster.selfAddress()));
