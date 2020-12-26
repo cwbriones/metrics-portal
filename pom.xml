@@ -966,6 +966,11 @@
       <version>${akka.version}</version>
       <scope>runtime</scope>
     </dependency>
+    <dependency>
+      <groupId>com.typesafe.akka</groupId>
+      <artifactId>akka-distributed-data_${scala.package.version}</artifactId>
+      <version>${akka.version}</version>
+    </dependency>
 
     <!-- Logging and Metrics -->
     <dependency>
