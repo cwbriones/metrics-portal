@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.ExecutionException;
 
 import akka.actor.ActorSystem;
 import akka.cluster.Cluster;
@@ -82,7 +83,7 @@ public class CachingAlertExecutionRepositoryTest {
     }
 
     @Test
-    public void testGetLastSuccessWritesToCache() throws Exception {
+    public void testGetFallsBackWhenNotFound() throws Exception {
         final UUID jobId = UUID.randomUUID();
         final Instant scheduled = Instant.now();
         final AlertEvaluationResult result = newResult();
@@ -98,20 +99,36 @@ public class CachingAlertExecutionRepositoryTest {
                 .get();
 
         Mockito.verify(_inner, times(1)).getLastSuccess(eq(jobId), eq(_organization));
-        Mockito.reset(_inner);
 
         assertThat(outerResult.isPresent(), is(true));
         assertThat(outerResult.get().getJobId(), is(jobId));
         assertThat(outerResult.get().getScheduled(), is(scheduled));
         assertThat(outerResult.get().getResult(), is(result));
+    }
 
-        final Optional<JobExecution.Success<AlertEvaluationResult>> cachedResult =
+    @Test
+    public void testCachedResultsDontAccessInner() throws ExecutionException, InterruptedException {
+        final UUID jobId = UUID.randomUUID();
+        final Instant scheduled = Instant.now();
+        final AlertEvaluationResult result = newResult();
+
+        _repo.jobStarted(jobId, _organization, scheduled);
+        _repo.jobSucceeded(jobId, _organization, scheduled, result);
+
+        final Optional<JobExecution.Success<AlertEvaluationResult>> outerResult =
             _repo.getLastSuccess(jobId, _organization)
                 .toCompletableFuture()
                 .get();
 
-        assertThat(cachedResult, is(equalTo(outerResult)));
         Mockito.verify(_inner, never()).getLastSuccess(eq(jobId), eq(_organization));
+
+        final Optional<JobExecution.Success<AlertEvaluationResult>> innerResult =
+            _inner.getLastSuccess(jobId, _organization)
+                .toCompletableFuture()
+                .get();
+
+        assertThat(outerResult.isPresent(), is(true));
+        assertThat(outerResult, is(equalTo(innerResult)));
     }
 
     @Test
@@ -150,7 +167,6 @@ public class CachingAlertExecutionRepositoryTest {
 
         Mockito.verify(_inner, never().description("Should have read all results from cache"))
             .getLastSuccessBatch(any(), any(), any());
-        Mockito.reset(_inner);
 
         final Map<UUID, JobExecution.Success<AlertEvaluationResult>> mixedResults =
             _repo.getLastSuccessBatch(jobIds, _organization, LocalDate.now())
@@ -160,17 +176,6 @@ public class CachingAlertExecutionRepositoryTest {
 
         Mockito.verify(_inner, times(1).description("Should have read some results from inner"))
             .getLastSuccessBatch(eq(notCachedIds), eq(_organization), any());
-        Mockito.reset(_inner);
-
-        final Map<UUID, JobExecution.Success<AlertEvaluationResult>> allCached =
-            _repo.getLastSuccessBatch(jobIds, _organization, LocalDate.now())
-                .toCompletableFuture()
-                .get();
-        assertThat(allCached.keySet(), containsInAnyOrder(jobIds.toArray()));
-        assertThat(allCached, is(equalTo(mixedResults)));
-
-        Mockito.verify(_inner, never().description("Should have read all results from cache"))
-            .getLastSuccessBatch(any(), any(), any());
     }
 
     private AlertEvaluationResult newResult() {

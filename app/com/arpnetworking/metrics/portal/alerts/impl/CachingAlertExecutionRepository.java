@@ -87,13 +87,7 @@ public class CachingAlertExecutionRepository implements AlertExecutionRepository
                     if (res.isPresent()) {
                         return CompletableFuture.completedFuture(res);
                     }
-                    return _inner.getLastSuccess(jobId, organization)
-                        .thenCompose(res2 -> {
-                            if (!res2.isPresent()) {
-                                return CompletableFuture.completedFuture(res2);
-                            }
-                            return CacheActor.put(ref, key, res2.get()).thenApply(ignore -> res2);
-                        });
+                    return _inner.getLastSuccess(jobId, organization);
                 });
     }
 
@@ -142,7 +136,6 @@ public class CachingAlertExecutionRepository implements AlertExecutionRepository
             }
             return _inner
                 .getLastSuccessBatch(misses, organization, maxLookback)
-                .thenCompose(rest -> writeBatchToCache(rest, organization).thenApply(ignore -> rest))
                 .thenApply(rest -> {
                     // Merge the cache hits / misses into a single map.
                     return Stream.concat(
@@ -151,24 +144,6 @@ public class CachingAlertExecutionRepository implements AlertExecutionRepository
                     ).collect(ImmutableMap.toImmutableMap(Map.Entry::getKey, Map.Entry::getValue));
                 });
         });
-    }
-
-    private CompletableFuture<Void> writeBatchToCache(
-        final Map<UUID, JobExecution.Success<AlertEvaluationResult>> batch,
-        final Organization organization
-    ) {
-        if (!_successCache.isPresent()) {
-            throw new IllegalStateException("cache not started, was open called?");
-        }
-        final ActorRef ref = _successCache.get();
-        ImmutableList<CompletionStage<Void>> writeFutures = batch.values()
-            .stream()
-            .map(e -> {
-                final String key = cacheKey(e.getJobId(), organization.getId());
-                return CacheActor.put(ref, key, e);
-            })
-            .collect(ImmutableList.toImmutableList());
-        return CompletableFutures.allOf(writeFutures).thenApply(ignore -> null);
     }
 
     @Override

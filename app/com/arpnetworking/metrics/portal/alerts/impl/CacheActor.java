@@ -18,7 +18,6 @@ import akka.pattern.Patterns;
 import com.arpnetworking.metrics.incubator.PeriodicMetrics;
 import com.arpnetworking.steno.Logger;
 import com.arpnetworking.steno.LoggerFactory;
-import models.internal.scheduling.JobExecution;
 import scala.Option;
 
 public class CacheActor<K, V> extends AbstractActor {
@@ -52,38 +51,10 @@ public class CacheActor<K, V> extends AbstractActor {
     }
 
     /**
-     * Put a Key-Value pair into the cache.
-     * <br>
-     * This will write a value into the local cache, letting replication happen
-     * at some future time. If you want to block on replication, use {@link CacheActor#putAll}
-     * instead.
-     *
-     * @param ref The cache actor ref.
-     * @param key The key.
-     * @param value The associated value.
-     * @param <K> The type of key.
-     * @param <V> The type of value.
-     * @return A completion stage to await for the write to complete.
-     */
-    public static <K, V> CompletionStage<Void> put(final ActorRef ref, final K key, final V value) {
-        return Patterns.askWithReplyTo(
-            ref,
-            replyTo -> new CachePut<>(key, value, replyTo, Replicator.writeLocal()),
-            Duration.ofSeconds(5)
-        ).thenApply(resp -> null);
-    }
-
-    /**
      * Put a Key-Value pair into the cache, including all replicas.
      * <br>
      * This will write a value into cache, blocking on replication. This means that
      * this method could timeout if all replicas do not respond in time.
-     * <br>
-     * This method should be used for situations where it's the value being cached
-     * was just computed on this node, and is likely not available yet elsewhere
-     * (e.g. a cluster-sharded operation computed this value).
-     *
-     * If you're caching a value read from a fallback, you should use put instead.
      *
      * @param ref The cache actor ref.
      * @param key The key.
@@ -180,18 +151,6 @@ public class CacheActor<K, V> extends AbstractActor {
 
     private LWWMap<K, V> takeLatestTimestamp(final LWWMap<K, V> current, final K key, final V value) {
         return current.put(node, key, value);
-    }
-
-    private <T> LWWMap<K, JobExecution.Success<T>> takeLatestTimestamp(
-        final LWWMap<K, JobExecution.Success<T>> current,
-        final K key,
-        final JobExecution.Success<T> value
-    ) {
-        Option<JobExecution.Success<T>> currentValue = current.get(key);
-        if (currentValue.isEmpty() || currentValue.get().getCompletedAt().compareTo(value.getCompletedAt()) < 0) {
-            return current.put(node, key, value);
-        }
-        return current;
     }
 
     public static final class CacheGet<K> {
