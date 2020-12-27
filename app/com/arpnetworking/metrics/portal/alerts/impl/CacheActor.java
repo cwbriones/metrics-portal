@@ -18,10 +18,13 @@ import akka.pattern.Patterns;
 import com.arpnetworking.metrics.incubator.PeriodicMetrics;
 import com.arpnetworking.steno.Logger;
 import com.arpnetworking.steno.LoggerFactory;
+import models.internal.scheduling.JobExecution;
 import scala.Option;
 
 public class CacheActor<K, V> extends AbstractActor {
     private static final Logger LOGGER = LoggerFactory.getLogger(CacheActor.class);
+    private static final Replicator.ReadConsistency DEFAULT_READ_CONSISTENCY =
+        new Replicator.ReadMajority(Duration.ofSeconds(5));
 
     private final ActorRef _replicator = DistributedData.get(getContext().getSystem()).replicator();
     private final PeriodicMetrics _metrics;
@@ -48,10 +51,51 @@ public class CacheActor<K, V> extends AbstractActor {
         ).thenApply(resp -> ((Optional<V>) resp));
     }
 
+    /**
+     * Put a Key-Value pair into the cache.
+     * <br>
+     * This will write a value into the local cache, letting replication happen
+     * at some future time. If you want to block on replication, use {@link CacheActor#putAll}
+     * instead.
+     *
+     * @param ref The cache actor ref.
+     * @param key The key.
+     * @param value The associated value.
+     * @param <K> The type of key.
+     * @param <V> The type of value.
+     * @return A completion stage to await for the write to complete.
+     */
     public static <K, V> CompletionStage<Void> put(final ActorRef ref, final K key, final V value) {
         return Patterns.askWithReplyTo(
             ref,
-            replyTo -> new CachePut<>(key, value, replyTo),
+            replyTo -> new CachePut<>(key, value, replyTo, Replicator.writeLocal()),
+            Duration.ofSeconds(5)
+        ).thenApply(resp -> null);
+    }
+
+    /**
+     * Put a Key-Value pair into the cache, including all replicas.
+     * <br>
+     * This will write a value into cache, blocking on replication. This means that
+     * this method could timeout if all replicas do not respond in time.
+     * <br>
+     * This method should be used for situations where it's the value being cached
+     * was just computed on this node, and is likely not available yet elsewhere
+     * (e.g. a cluster-sharded operation computed this value).
+     *
+     * If you're caching a value read from a fallback, you should use put instead.
+     *
+     * @param ref The cache actor ref.
+     * @param key The key.
+     * @param value The associated value.
+     * @param <K> The type of key.
+     * @param <V> The type of value.
+     * @return A completion stage to await for the write to complete.
+     */
+    public static <K, V> CompletionStage<Void> putAll(final ActorRef ref, final K key, final V value) {
+        return Patterns.askWithReplyTo(
+            ref,
+            replyTo -> new CachePut<>(key, value, replyTo, new Replicator.WriteAll(Duration.ofSeconds(5))),
             Duration.ofSeconds(5)
         ).thenApply(resp -> null);
     }
@@ -65,8 +109,7 @@ public class CacheActor<K, V> extends AbstractActor {
 
                 _metrics.recordCounter("cache/get", 1);
                 final Key<LWWMap<K, V>> key = LWWMapKey.create(_cacheName);
-                final Replicator.ReadConsistency readMajority = new Replicator.ReadMajority(Duration.ofSeconds(5));
-                _replicator.tell(new Replicator.Get<>(key, readMajority, Optional.of(castMsg)), getSelf());
+                _replicator.tell(new Replicator.Get<>(key, DEFAULT_READ_CONSISTENCY, Optional.of(castMsg)), getSelf());
             })
             .match(Replicator.GetResponse.class, msg -> {
                 final Optional<CacheGet<K>> request = (Optional<CacheGet<K>>) msg.getRequest();
@@ -98,17 +141,16 @@ public class CacheActor<K, V> extends AbstractActor {
             })
             .match(CachePut.class, msg -> {
                 _metrics.recordCounter("cache/put", 1);
-                final CachePut<K, V> castMsg = (CachePut<K, V>) msg;
+                final CachePut<K, V> putMsg = (CachePut<K, V>) msg;
                 final Key<LWWMap<K, V>> key = LWWMapKey.create(_cacheName);
-                final Replicator.WriteConsistency consistency = Replicator.writeLocal();
 
                 _replicator.tell(
                     new Replicator.Update<>(
                         key,
                         LWWMap.create(),
-                        consistency,
+                        putMsg.getWriteConsistency(),
                         Optional.of(msg),
-                        curr -> curr.put(node, castMsg.getKey(), castMsg.getValue())
+                        curr -> takeLatestTimestamp(curr, putMsg.getKey(), putMsg.getValue())
                     ),
                     getSelf()
                 );
@@ -136,6 +178,22 @@ public class CacheActor<K, V> extends AbstractActor {
             .build();
     }
 
+    private LWWMap<K, V> takeLatestTimestamp(final LWWMap<K, V> current, final K key, final V value) {
+        return current.put(node, key, value);
+    }
+
+    private <T> LWWMap<K, JobExecution.Success<T>> takeLatestTimestamp(
+        final LWWMap<K, JobExecution.Success<T>> current,
+        final K key,
+        final JobExecution.Success<T> value
+    ) {
+        Option<JobExecution.Success<T>> currentValue = current.get(key);
+        if (currentValue.isEmpty() || currentValue.get().getCompletedAt().compareTo(value.getCompletedAt()) < 0) {
+            return current.put(node, key, value);
+        }
+        return current;
+    }
+
     public static final class CacheGet<K> {
         private final K _key;
         private final ActorRef _replyTo;
@@ -158,11 +216,13 @@ public class CacheActor<K, V> extends AbstractActor {
         private final K _key;
         private final V _value;
         private final ActorRef _replyTo;
+        private final Replicator.WriteConsistency _writeConsistency;
 
-        public CachePut(final K key, final V value, final ActorRef replyTo) {
+        public CachePut(final K key, final V value, final ActorRef replyTo, final Replicator.WriteConsistency writeConsistency) {
             _key = key;
             _value = value;
             _replyTo = replyTo;
+            _writeConsistency = writeConsistency;
         }
 
         public K getKey() {
@@ -175,6 +235,10 @@ public class CacheActor<K, V> extends AbstractActor {
 
         public ActorRef getReplyTo() {
             return _replyTo;
+        }
+
+        public Replicator.WriteConsistency getWriteConsistency() {
+            return _writeConsistency;
         }
     }
 }

@@ -142,21 +142,32 @@ public class CachingAlertExecutionRepositoryTest {
         final List<UUID> cachedIds = cachedIdsBuilder.build();
         final List<UUID> notCachedIds = notCachedIdsBuilder.build();
 
-        final Map<UUID, JobExecution.Success<AlertEvaluationResult>> outerResult =
-            _repo.getLastSuccessBatch(jobIds, _organization, LocalDate.now())
-                .toCompletableFuture()
-                .get();
-        assertThat(outerResult.keySet(), containsInAnyOrder(jobIds.toArray()));
-
-        Mockito.verify(_inner, times(1).description("Should have read some results from cache"))
-            .getLastSuccessBatch(eq(notCachedIds), eq(_organization), any());
-        Mockito.reset(_inner);
-
         final Map<UUID, JobExecution.Success<AlertEvaluationResult>> cachedResults =
             _repo.getLastSuccessBatch(cachedIds, _organization, LocalDate.now())
                 .toCompletableFuture()
                 .get();
         assertThat(cachedResults.keySet(), containsInAnyOrder(cachedIds.toArray()));
+
+        Mockito.verify(_inner, never().description("Should have read all results from cache"))
+            .getLastSuccessBatch(any(), any(), any());
+        Mockito.reset(_inner);
+
+        final Map<UUID, JobExecution.Success<AlertEvaluationResult>> mixedResults =
+            _repo.getLastSuccessBatch(jobIds, _organization, LocalDate.now())
+                .toCompletableFuture()
+                .get();
+        assertThat(mixedResults.keySet(), containsInAnyOrder(jobIds.toArray()));
+
+        Mockito.verify(_inner, times(1).description("Should have read some results from inner"))
+            .getLastSuccessBatch(eq(notCachedIds), eq(_organization), any());
+        Mockito.reset(_inner);
+
+        final Map<UUID, JobExecution.Success<AlertEvaluationResult>> allCached =
+            _repo.getLastSuccessBatch(jobIds, _organization, LocalDate.now())
+                .toCompletableFuture()
+                .get();
+        assertThat(allCached.keySet(), containsInAnyOrder(jobIds.toArray()));
+        assertThat(allCached, is(equalTo(mixedResults)));
 
         Mockito.verify(_inner, never().description("Should have read all results from cache"))
             .getLastSuccessBatch(any(), any(), any());

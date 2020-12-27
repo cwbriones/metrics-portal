@@ -2,7 +2,11 @@ package com.arpnetworking.metrics.portal.alerts.impl;
 
 import java.time.Instant;
 import java.time.LocalDate;
-import java.util.*;
+import java.util.List;
+import java.util.Map;
+import java.util.NoSuchElementException;
+import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.CompletionStage;
@@ -51,6 +55,7 @@ public class CachingAlertExecutionRepository implements AlertExecutionRepository
     @Override
     public void close() {
         _inner.close();
+        _successCache.ifPresent(_actorSystem::stop);
     }
 
     @Override
@@ -95,13 +100,13 @@ public class CachingAlertExecutionRepository implements AlertExecutionRepository
             throw new IllegalStateException("cache not started, was open called?");
         }
         final ActorRef ref = _successCache.get();
-        // Get all ids from cache, no fallback.
+        // Attempt to get all ids from cache
         final List<CompletionStage<Optional<JobExecution.Success<AlertEvaluationResult>>>> futures =
             jobIds.stream()
                 .map(id -> cacheKey(id, organization.getId()))
                 .map(key -> CacheActor.<String, JobExecution.Success<AlertEvaluationResult>>get(ref, key))
                 .collect(ImmutableList.toImmutableList());
-        // accumulate the responses from the cache.
+        // Accumulate the cache responses into a map.
         final CompletableFuture<ImmutableMap<UUID, JobExecution.Success<AlertEvaluationResult>>> cached =
             CompletableFutures.allOf(futures)
                 .thenApply(ignored ->
@@ -119,25 +124,44 @@ public class CachingAlertExecutionRepository implements AlertExecutionRepository
                     ))
                 );
         return cached.thenCompose(hits -> {
-            // Check for missing ids.
-            final List<UUID> notFound =
+            // Check for any cache misses and fetch those from the inner
+            // repository.
+            final List<UUID> misses =
                 jobIds.stream()
                     .filter(Predicates.in(hits.keySet()).negate())
                     .collect(ImmutableList.toImmutableList());
-            if (notFound.isEmpty()) {
+            if (misses.isEmpty()) {
                 return CompletableFuture.completedFuture(hits);
             }
-            // call super to fetch those.
             return _inner
-                .getLastSuccessBatch(notFound, organization, maxLookback)
+                .getLastSuccessBatch(misses, organization, maxLookback)
+                .thenCompose(rest -> writeBatchToCache(rest, organization).thenApply(ignore -> rest))
                 .thenApply(rest -> {
-                    // Merge everything.
+                    // Merge the cache hits / misses into a single map.
                     return Stream.concat(
                         hits.entrySet().stream(),
                         rest.entrySet().stream()
                     ).collect(ImmutableMap.toImmutableMap(Map.Entry::getKey, Map.Entry::getValue));
                 });
         });
+    }
+
+    private CompletableFuture<Void> writeBatchToCache(
+        final Map<UUID, JobExecution.Success<AlertEvaluationResult>> batch,
+        final Organization organization
+    ) {
+        if (!_successCache.isPresent()) {
+            throw new IllegalStateException("cache not started, was open called?");
+        }
+        final ActorRef ref = _successCache.get();
+        ImmutableList<CompletionStage<Void>> writeFutures = batch.values()
+            .stream()
+            .map(e -> {
+                final String key = cacheKey(e.getJobId(), organization.getId());
+                return CacheActor.put(ref, key, e);
+            })
+            .collect(ImmutableList.toImmutableList());
+        return CompletableFutures.allOf(writeFutures).thenApply(ignore -> null);
     }
 
     @Override
@@ -166,7 +190,7 @@ public class CachingAlertExecutionRepository implements AlertExecutionRepository
         final ActorRef ref = _successCache.get();
         final String key = cacheKey(jobId, organization.getId());
         return _inner.jobSucceeded(jobId, organization, scheduled, result)
-            .thenCompose(e -> CacheActor.put(ref, key, e).thenApply(ignore -> e));
+            .thenCompose(e -> CacheActor.putAll(ref, key, e).thenApply(ignore -> e));
     }
 
     @Override
@@ -177,6 +201,6 @@ public class CachingAlertExecutionRepository implements AlertExecutionRepository
     }
 
     private String cacheKey(final UUID jobId, final UUID organizationId) {
-        return jobId.toString();
+        return String.format("%s-%s", organizationId, jobId);
     }
 }
