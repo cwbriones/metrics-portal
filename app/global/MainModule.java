@@ -17,10 +17,7 @@ package global;
 
 import actors.JvmMetricsCollector;
 import actors.NoopActor;
-import akka.actor.ActorRef;
-import akka.actor.ActorSystem;
-import akka.actor.PoisonPill;
-import akka.actor.Props;
+import akka.actor.*;
 import akka.cluster.Cluster;
 import akka.cluster.sharding.ClusterSharding;
 import akka.cluster.sharding.ClusterShardingSettings;
@@ -54,6 +51,7 @@ import com.arpnetworking.metrics.incubator.PeriodicMetrics;
 import com.arpnetworking.metrics.incubator.impl.TsdPeriodicMetrics;
 import com.arpnetworking.metrics.portal.alerts.AlertExecutionRepository;
 import com.arpnetworking.metrics.portal.alerts.AlertRepository;
+import com.arpnetworking.metrics.portal.alerts.impl.CachingAlertExecutionRepository;
 import com.arpnetworking.metrics.portal.alerts.impl.DatabaseAlertExecutionRepository;
 import com.arpnetworking.metrics.portal.alerts.scheduling.AlertExecutionContext;
 import com.arpnetworking.metrics.portal.alerts.scheduling.AlertJobRepository;
@@ -716,8 +714,8 @@ public class MainModule extends AbstractModule {
 
         @Override
         public AlertExecutionRepository get() {
-            final AlertExecutionRepository executionRepository = _injector.getInstance(
-                    ConfigurationHelper.<AlertExecutionRepository>getType(_environment, _configuration, "alertExecutionRepository.type"));
+            final AlertExecutionRepository executionRepository =
+                    ConfigurationHelper.toInstanceMapped(_injector, _environment, _configuration.getConfig("alertExecutionRepository"));
             executionRepository.open();
             _lifecycle.addStopHook(
                     () -> {

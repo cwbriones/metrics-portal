@@ -44,6 +44,13 @@ public class CachingAlertExecutionRepository implements AlertExecutionRepository
         _actorSystem = actorSystem;
     }
 
+    public CachingAlertExecutionRepository(final Builder builder) {
+        _inner = builder._inner;
+        _successCache = Optional.empty();
+        _metrics = builder._periodicMetrics;
+        _actorSystem = builder._actorSystem;
+    }
+
     @Override
     public void open() {
         _inner.open();
@@ -202,5 +209,30 @@ public class CachingAlertExecutionRepository implements AlertExecutionRepository
 
     private String cacheKey(final UUID jobId, final UUID organizationId) {
         return String.format("%s-%s", organizationId, jobId);
+    }
+
+    public static final class Builder {
+        private AlertExecutionRepository _inner;
+        private ActorSystem _actorSystem;
+        private PeriodicMetrics _periodicMetrics;
+
+        public CachingAlertExecutionRepository build() {
+            return new CachingAlertExecutionRepository(this);
+        }
+
+        public Builder setActorSystem(final ActorSystem actorSystem) {
+            this._actorSystem = actorSystem;
+            return this;
+        }
+
+        public Builder setPeriodicMetrics(final PeriodicMetrics periodicMetrics) {
+            this._periodicMetrics = periodicMetrics;
+            return this;
+        }
+
+        public Builder setInner(final AlertExecutionRepository inner) {
+            this._inner = inner;
+            return this;
+        }
     }
 }
